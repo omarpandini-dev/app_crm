@@ -1,0 +1,22 @@
+{
+  "name": "crm-prospeccao",
+  "version": "1.0.0",
+  "description": "CRM local para prospecção de clientes de landing pages",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test --test-isolation=none --test-concurrency=1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "csv-parse": "^6.1.0",
+    "express": "^5.1.0",
+    "multer": "^2.0.2"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.4"
+  }
+}

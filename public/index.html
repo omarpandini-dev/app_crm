@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="CRM local para gerenciar oportunidades de landing pages">
+  <title>CRM de Prospecção</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <nav class="topbar" aria-label="Navegação principal">
+        <a href="/" class="brand"><span class="brand-mark">C</span><span>Clarity CRM</span></a>
+        <span class="local-badge"><span></span> Dados locais</span>
+      </nav>
+      <div class="hero-content">
+        <div>
+          <p class="eyebrow">Pipeline comercial</p>
+          <h1>CRM de Prospecção</h1>
+          <p class="hero-subtitle">Gerenciamento de possíveis clientes para landing pages</p>
+        </div>
+        <form id="form-importacao" class="import-card">
+          <label id="drop-zone" class="drop-zone" for="arquivo-csv">
+            <span class="upload-icon" aria-hidden="true">↑</span>
+            <span><strong>Selecione ou arraste um CSV</strong><small>Até 5 MB · dados preservados na reimportação</small></span>
+            <input id="arquivo-csv" name="arquivo" type="file" accept=".csv,text/csv" required>
+          </label>
+          <button class="button button-primary" type="submit"><span>Importar clientes</span><span aria-hidden="true">↗</span></button>
+        </form>
+      </div>
+    </header>
+
+    <main>
+      <section class="summary-grid" aria-label="Resumo do CRM">
+        <button type="button" class="summary-card active" data-summary-filter="total" aria-pressed="true"><span class="summary-icon">◎</span><span><strong id="resumo-total">—</strong><span>Total de clientes</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="Pendente" aria-pressed="false"><span class="summary-dot pending"></span><span><strong id="resumo-pendentes">—</strong><span>Pendentes</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="Aguardando retorno" aria-pressed="false"><span class="summary-dot waiting"></span><span><strong id="resumo-aguardando">—</strong><span>Aguardando retorno</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="Proposta enviada" aria-pressed="false"><span class="summary-dot proposal"></span><span><strong id="resumo-propostas">—</strong><span>Propostas enviadas</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="Fechado" aria-pressed="false"><span class="summary-dot closed"></span><span><strong id="resumo-fechados">—</strong><span>Clientes fechados</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="interacoes" aria-pressed="false"><span class="summary-icon small">↗</span><span><strong id="resumo-interacoes">—</strong><span>Interações registradas</span></span></button>
+      </section>
+
+      <section class="workspace">
+        <div class="section-heading">
+          <div><p class="eyebrow dark">Oportunidades</p><h2>Clientes em prospecção</h2></div>
+          <span id="contador-clientes" class="result-count">Carregando…</span>
+        </div>
+        <form id="form-filtros" class="filters">
+          <label class="search-field"><span aria-hidden="true">⌕</span><input id="busca" type="search" placeholder="Buscar empresa, WhatsApp, segmento ou cidade…" aria-label="Buscar clientes"></label>
+          <select id="filtro-status" aria-label="Filtrar por status"><option value="">Todos os status</option></select>
+          <select id="filtro-prioridade" aria-label="Filtrar por prioridade"><option value="">Todas as prioridades</option><option>Alta</option><option>Média</option><option>Baixa</option></select>
+          <select id="filtro-segmento" aria-label="Filtrar por segmento"><option value="">Todos os segmentos</option></select>
+          <button id="limpar-filtros" class="button button-ghost" type="button">Limpar</button>
+        </form>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Empresa</th><th>Contato</th><th>Prioridade</th><th>Status</th><th>Último contato</th><th>Interações</th><th><span class="sr-only">Ações</span></th></tr></thead>
+            <tbody id="lista-clientes"></tbody>
+          </table>
+          <div id="estado-vazio" class="empty-state" hidden><span>⌕</span><h3>Nenhum cliente encontrado</h3><p>Ajuste os filtros ou importe uma nova lista.</p></div>
+        </div>
+        <div class="pagination"><button id="pagina-anterior" class="page-button" aria-label="Página anterior">←</button><span id="info-pagina">Página 1 de 1</span><button id="proxima-pagina" class="page-button" aria-label="Próxima página">→</button></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="dialog-cliente" class="drawer">
+    <div class="drawer-panel">
+      <header class="drawer-header"><div><p class="eyebrow dark">Perfil do cliente</p><h2 id="detalhe-empresa">Cliente</h2><p id="detalhe-subtitulo"></p></div><button class="icon-button" data-close="dialog-cliente" aria-label="Fechar">×</button></header>
+      <div class="drawer-body">
+        <section id="dados-importados" class="detail-grid"></section>
+        <form id="form-cliente" class="edit-card">
+          <div class="section-title"><div><span class="step">01</span><h3>Acompanhamento</h3></div><span>Campos editáveis</span></div>
+          <div class="form-grid">
+            <label>Status<select id="cliente-status" required></select></label>
+            <label>Último contato<input id="cliente-ultimo-contato" type="datetime-local"></label>
+            <label class="full">Observações gerais<textarea id="cliente-observacoes" maxlength="5000" rows="4" placeholder="Informações gerais sobre o cliente…"></textarea></label>
+          </div>
+          <button class="button button-primary" type="submit">Salvar alterações</button>
+        </form>
+        <section class="timeline-section">
+          <div class="section-title"><div><span class="step">02</span><h3>Histórico de interações</h3></div><button id="nova-interacao" class="button button-secondary" type="button"><span>＋</span> Nova interação</button></div>
+          <div id="timeline" class="timeline"></div>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="dialog-interacao" class="modal">
+    <form id="form-interacao" class="modal-card">
+      <header><div><p class="eyebrow dark">Histórico</p><h2 id="titulo-form-interacao">Nova interação</h2></div><button class="icon-button" type="button" data-close="dialog-interacao" aria-label="Fechar">×</button></header>
+      <input id="interacao-id" type="hidden">
+      <div class="form-grid">
+        <label>Data e hora<input id="interacao-data" type="datetime-local" required></label>
+        <label>Canal<select id="interacao-tipo" required></select></label>
+        <label class="full">Título<select id="interacao-titulo" required><option value="" disabled selected>Selecione a atividade</option></select></label>
+        <div class="full description-field">
+          <span class="field-label">Descrição</span>
+          <div id="interacao-descricao-opcoes" class="radio-options" role="radiogroup" aria-label="Descrição da interação"></div>
+          <label id="interacao-descricao-outro-wrap" class="other-description" hidden>Outros
+            <textarea id="interacao-descricao" maxlength="5000" rows="3" placeholder="Descreva o que aconteceu nesta interação…"></textarea>
+          </label>
+        </div>
+        <label class="full">Resultado ou próximo passo<textarea id="interacao-resultado" maxlength="3000" rows="3" placeholder="Ex.: Enviar portfólio na sexta-feira"></textarea></label>
+      </div>
+      <footer><button class="button button-ghost" type="button" data-close="dialog-interacao">Cancelar</button><button class="button button-primary" type="submit">Salvar interação</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-interacoes-rapidas" class="modal">
+    <section class="modal-card quick-history-card">
+      <header>
+        <div><p class="eyebrow dark">Histórico do cliente</p><h2 id="interacoes-rapidas-empresa">Interações salvas</h2><p id="interacoes-rapidas-subtitulo" class="modal-subtitle"></p></div>
+        <button class="icon-button" type="button" data-close="dialog-interacoes-rapidas" aria-label="Fechar">×</button>
+      </header>
+      <div id="interacoes-rapidas-lista" class="quick-history-list"></div>
+    </section>
+  </dialog>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
