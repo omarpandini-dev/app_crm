@@ -5,7 +5,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { criarRotasClientes } = require('./routes/clientes');
 const { criarRotasInteracoes } = require('./routes/interacoes');
+const { criarRotasPagamentos } = require('./routes/pagamentos');
 const { importarCsv } = require('./services/csvImporter');
+const { venceEmBreve, possuiVencimentoAtrasado, clientePagoNoMes, totalPagoNoMes } = require('./services/vencimentosService');
+const { gerarQrCodePix } = require('./services/pixService');
 
 function criarApp({ database, uploadDir, publicDir = path.join(__dirname, '..', 'public') }) {
   const app = express();
@@ -26,6 +29,7 @@ function criarApp({ database, uploadDir, publicDir = path.join(__dirname, '..', 
   app.use(express.json({ limit: '100kb' }));
   app.use(express.static(publicDir));
   app.use('/api/clientes/:whatsapp/interacoes', criarRotasInteracoes(database));
+  app.use('/api/clientes/:whatsapp/pagamentos', criarRotasPagamentos(database));
   app.use('/api/clientes', criarRotasClientes(database));
 
   app.get('/api/resumo', async (_req, res) => {
@@ -38,8 +42,17 @@ function criarApp({ database, uploadDir, publicDir = path.join(__dirname, '..', 
       aguardandoRetorno: contar('Aguardando retorno'),
       propostasEnviadas: contar('Proposta enviada'),
       fechados: contar('Fechado'),
+      proximosVencimentos: clientes.filter((cliente) => venceEmBreve(cliente)).length,
+      vencimentosAtrasados: clientes.filter((cliente) => possuiVencimentoAtrasado(cliente)).length,
+      clientesPagosMes: clientes.filter((cliente) => clientePagoNoMes(cliente)).length,
+      totalPagoMes: totalPagoNoMes(clientes),
       interacoes: clientes.reduce((total, cliente) => total + (cliente.interacoes?.length || 0), 0)
     });
+  });
+
+  app.post('/api/pix/qrcode', async (req, res) => {
+    const resultado = await gerarQrCodePix(req.body || {});
+    res.json(resultado);
   });
 
   app.post('/api/importar', upload.single('arquivo'), async (req, res) => {

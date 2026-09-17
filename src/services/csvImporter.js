@@ -79,6 +79,8 @@ async function importarCsv(filePath, database) {
         ultimoContato: '',
         observacoes: '',
         interacoes: [],
+        diaVencimento: null,
+        pagamentos: [],
         criadoEm: agora,
         atualizadoEm: agora
       };

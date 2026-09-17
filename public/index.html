@@ -11,7 +11,7 @@
   <div class="page-shell">
     <header class="hero">
       <nav class="topbar" aria-label="Navegação principal">
-        <a href="/" class="brand"><span class="brand-mark">C</span><span>Clarity CRM</span></a>
+        <a href="/" class="brand"><span class="brand-mark">C</span><span>I-CRM</span></a>
         <span class="local-badge"><span></span> Dados locais</span>
       </nav>
       <div class="hero-content">
@@ -27,18 +27,22 @@
             <input id="arquivo-csv" name="arquivo" type="file" accept=".csv,text/csv" required>
           </label>
           <button class="button button-primary" type="submit"><span>Importar clientes</span><span aria-hidden="true">↗</span></button>
+          <button id="abrir-gerador-pix" class="button button-pix-generator" type="button"><span aria-hidden="true">💳</span><span>Gerador de Pix</span></button>
         </form>
       </div>
     </header>
 
     <main>
       <section class="summary-grid" aria-label="Resumo do CRM">
-        <button type="button" class="summary-card active" data-summary-filter="total" aria-pressed="true"><span class="summary-icon">◎</span><span><strong id="resumo-total">—</strong><span>Total de clientes</span></span></button>
-        <button type="button" class="summary-card" data-summary-filter="Pendente" aria-pressed="false"><span class="summary-dot pending"></span><span><strong id="resumo-pendentes">—</strong><span>Pendentes</span></span></button>
-        <button type="button" class="summary-card" data-summary-filter="Aguardando retorno" aria-pressed="false"><span class="summary-dot waiting"></span><span><strong id="resumo-aguardando">—</strong><span>Aguardando retorno</span></span></button>
-        <button type="button" class="summary-card" data-summary-filter="Proposta enviada" aria-pressed="false"><span class="summary-dot proposal"></span><span><strong id="resumo-propostas">—</strong><span>Propostas enviadas</span></span></button>
-        <button type="button" class="summary-card" data-summary-filter="Fechado" aria-pressed="false"><span class="summary-dot closed"></span><span><strong id="resumo-fechados">—</strong><span>Clientes fechados</span></span></button>
-        <button type="button" class="summary-card" data-summary-filter="interacoes" aria-pressed="false"><span class="summary-icon small">↗</span><span><strong id="resumo-interacoes">—</strong><span>Interações registradas</span></span></button>
+        <button type="button" class="summary-card active" data-summary-filter="total" aria-pressed="true"><span class="summary-emoji" aria-hidden="true">👥</span><span><strong id="resumo-total">—</strong><span>Total de clientes</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="Pendente" aria-pressed="false"><span class="summary-emoji pending" aria-hidden="true">⏳</span><span><strong id="resumo-pendentes">—</strong><span>Pendentes</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="Aguardando retorno" aria-pressed="false"><span class="summary-emoji waiting" aria-hidden="true">💬</span><span><strong id="resumo-aguardando">—</strong><span>Aguardando retorno</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="Proposta enviada" aria-pressed="false"><span class="summary-emoji proposal" aria-hidden="true">📄</span><span><strong id="resumo-propostas">—</strong><span>Propostas enviadas</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="Fechado" aria-pressed="false"><span class="summary-emoji closed" aria-hidden="true">🤝</span><span><strong id="resumo-fechados">—</strong><span>Clientes fechados</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="vencimentos" aria-pressed="false"><span class="summary-emoji due" aria-hidden="true">💳</span><span><strong id="resumo-vencimentos">—</strong><span>Próximos vencimentos</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="atrasados" aria-pressed="false"><span class="summary-emoji overdue" aria-hidden="true">⚠️</span><span><strong id="resumo-atrasados">—</strong><span>Pagamentos vencidos</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="pagos" aria-pressed="false"><span class="summary-emoji paid" aria-hidden="true">💰</span><span><strong id="resumo-pagos">—</strong><span>Pagos no mês</span></span></button>
+        <button type="button" class="summary-card" data-summary-filter="interacoes" aria-pressed="false"><span class="summary-emoji interactions" aria-hidden="true">🗂️</span><span><strong id="resumo-interacoes">—</strong><span>Interações registradas</span></span></button>
       </section>
 
       <section class="workspace">
@@ -56,7 +60,7 @@
 
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Empresa</th><th>Contato</th><th>Prioridade</th><th>Status</th><th>Último contato</th><th>Interações</th><th><span class="sr-only">Ações</span></th></tr></thead>
+            <thead><tr><th>Empresa</th><th>Contato</th><th>Prioridade</th><th>Status</th><th>Último contato</th><th>Próximo vencimento</th><th>Interações</th><th id="coluna-pagamento" hidden>Pagamento</th><th id="coluna-pix" hidden>Pix</th><th><span class="sr-only">Ações</span></th></tr></thead>
             <tbody id="lista-clientes"></tbody>
           </table>
           <div id="estado-vazio" class="empty-state" hidden><span>⌕</span><h3>Nenhum cliente encontrado</h3><p>Ajuste os filtros ou importe uma nova lista.</p></div>
@@ -76,6 +80,7 @@
           <div class="form-grid">
             <label>Status<select id="cliente-status" required></select></label>
             <label>Último contato<input id="cliente-ultimo-contato" type="datetime-local"></label>
+            <label id="cliente-vencimento-wrap" class="full billing-field" hidden>Dia de vencimento mensal<input id="cliente-dia-vencimento" type="number" min="1" max="31" placeholder="Ex.: 10"><small>Para meses mais curtos, será usado o último dia do mês.</small></label>
             <label class="full">Observações gerais<textarea id="cliente-observacoes" maxlength="5000" rows="4" placeholder="Informações gerais sobre o cliente…"></textarea></label>
           </div>
           <button class="button button-primary" type="submit">Salvar alterações</button>
@@ -83,6 +88,10 @@
         <section class="timeline-section">
           <div class="section-title"><div><span class="step">02</span><h3>Histórico de interações</h3></div><button id="nova-interacao" class="button button-secondary" type="button"><span>＋</span> Nova interação</button></div>
           <div id="timeline" class="timeline"></div>
+        </section>
+        <section class="payments-section">
+          <div class="section-title"><div><span class="step">03</span><h3>Pagamentos</h3></div><button id="novo-pagamento" class="button button-secondary" type="button"><span>＋</span> Novo pagamento</button></div>
+          <div id="pagamentos-lista" class="payments-list"></div>
         </section>
       </div>
     </div>
@@ -117,6 +126,40 @@
       </header>
       <div id="interacoes-rapidas-lista" class="quick-history-list"></div>
     </section>
+  </dialog>
+
+  <dialog id="dialog-pagamento" class="modal">
+    <form id="form-pagamento" class="modal-card">
+      <header><div><p class="eyebrow dark">Financeiro</p><h2 id="titulo-form-pagamento">Novo pagamento</h2></div><button class="icon-button" type="button" data-close="dialog-pagamento" aria-label="Fechar">×</button></header>
+      <input id="pagamento-id" type="hidden">
+      <div class="form-grid">
+        <label>Data de vencimento<input id="pagamento-vencimento" type="date" required></label>
+        <label>Valor (R$)<input id="pagamento-valor" type="number" min="0.01" max="1000000" step="0.01" value="50.00" required></label>
+        <label>Status<select id="pagamento-status" required><option>Pendente</option><option>Pago</option><option>Atrasado</option><option>Cancelado</option></select></label>
+        <label>Data do pagamento<input id="pagamento-data" type="date"></label>
+        <label class="full">Observações<textarea id="pagamento-observacoes" maxlength="1000" rows="3" placeholder="Informações adicionais sobre a cobrança…"></textarea></label>
+      </div>
+      <footer><button class="button button-ghost" type="button" data-close="dialog-pagamento">Cancelar</button><button class="button button-primary" type="submit">Salvar pagamento</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-pix" class="modal">
+    <form id="form-pix" class="modal-card pix-modal-card">
+      <header><div><p class="eyebrow dark">Cobrança Pix</p><h2>Gerar QR Code</h2><p id="pix-cliente" class="modal-subtitle"></p></div><button class="icon-button" type="button" data-close="dialog-pix" aria-label="Fechar">×</button></header>
+      <div class="pix-recipient"><img src="/pix.svg" alt=""><span><strong>OJP Sistemas Ltda</strong><small>Chave Pix: 62.197.420/0001-67</small></span></div>
+      <div class="form-grid pix-value-form">
+        <label id="pix-valor-wrap">Valor da cobrança (R$)<input id="pix-valor" type="number" min="0.01" max="1000000" step="0.01" value="50.00" required></label>
+        <label id="pix-vencimento-wrap">Vencimento<input id="pix-vencimento" type="date" readonly></label>
+      </div>
+      <div id="pix-resultado" class="pix-result" hidden>
+        <img id="pix-qrcode" alt="QR Code Pix para pagamento">
+        <div><strong id="pix-resultado-valor"></strong><small id="pix-txid"></small></div>
+        <label>Pix Copia e Cola<textarea id="pix-copia-cola" rows="4" readonly></textarea></label>
+        <button id="copiar-pix" class="button button-ghost" type="button">Copiar código Pix</button>
+      </div>
+      <p class="pix-warning">Confira no aplicativo do banco se o recebedor exibido é OJP Sistemas Ltda antes de compartilhar o QR Code.</p>
+      <footer><button class="button button-ghost" type="button" data-close="dialog-pix">Cancelar</button><button class="button button-primary" type="submit">Gerar QR Code</button></footer>
+    </form>
   </dialog>
 
   <div id="toast-container" class="toast-container" aria-live="polite"></div>

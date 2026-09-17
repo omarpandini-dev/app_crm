@@ -74,7 +74,7 @@ Todas as respostas da API são JSON, exceto a exclusão bem-sucedida (`204`, sem
 | `POST` | `/api/importar` | Importa o campo multipart `arquivo` |
 | `GET` | `/api/resumo` | Retorna os indicadores do painel |
 
-Parâmetros de listagem: `busca`, `status`, `prioridade`, `segmento`, `comInteracoes` (`1` ou `true`), `page` e `limit` (máximo 100). Os cards do painel usam esses filtros e podem ser combinados com a busca, prioridade e segmento.
+Parâmetros de listagem: `busca`, `status`, `prioridade`, `segmento`, `comInteracoes`, `proximosVencimentos` (`1` ou `true`), `page` e `limit` (máximo 100). Os cards do painel usam esses filtros e podem ser combinados com a busca, prioridade e segmento.
 
 Exemplo:
 
@@ -105,6 +105,28 @@ Corpo para criação ou edição:
 ```
 
 O `id`, `criadoEm` e `atualizadoEm` são controlados pelo backend.
+
+### Pagamentos e vencimentos
+
+Clientes com status `Fechado` possuem um dia de vencimento mensal entre 1 e 31. Quando o mês é mais curto, o sistema usa seu último dia. O painel destaca os vencimentos dos próximos sete dias, separa pagamentos vencidos e soma, no card `Pagos no mês`, os pagamentos quitados no mês corrente. Uma competência paga deixa de aparecer nos próximos vencimentos e nos vencidos.
+
+| Método | Endpoint | Descrição |
+|---|---|---|
+| `GET` | `/api/clientes/:whatsapp/pagamentos` | Lista os pagamentos |
+| `GET` | `/api/clientes/:whatsapp/pagamentos/:pagamentoId` | Consulta um pagamento |
+| `POST` | `/api/clientes/:whatsapp/pagamentos` | Registra um pagamento; o valor padrão é R$ 50,00 |
+| `PATCH` | `/api/clientes/:whatsapp/pagamentos/:pagamentoId` | Edita valor, datas, status e observações |
+| `DELETE` | `/api/clientes/:whatsapp/pagamentos/:pagamentoId` | Exclui somente o pagamento indicado |
+
+### QR Code Pix
+
+No filtro `Próximos vencimentos`, a coluna Pix permite gerar um QR Code estático e o código Pix Copia e Cola. O valor inicial é R$ 50,00 e pode ser alterado antes da geração.
+
+```text
+POST /api/pix/qrcode
+```
+
+O recebedor padrão é OJP Sistemas Ltda, chave CNPJ `62197420000167`, cidade Joinville. Esses dados podem ser substituídos pelas variáveis `PIX_KEY`, `PIX_RECEIVER_NAME` e `PIX_RECEIVER_CITY`. A aplicação gera o BR Code localmente e não consulta nem confirma pagamentos no banco.
 
 ## Estrutura principal
 

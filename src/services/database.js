@@ -16,7 +16,17 @@ class JsonDatabase {
     } catch {
       await this.#writeAtomic({ clientes: {} }, false);
     }
-    await this.read();
+    const dados = await this.read();
+    const precisaMigrar = Object.values(dados.clientes).some((cliente) =>
+      !Object.prototype.hasOwnProperty.call(cliente, 'diaVencimento') || !Array.isArray(cliente.pagamentos));
+    if (precisaMigrar) {
+      await this.transaction((db) => {
+        for (const cliente of Object.values(db.clientes)) {
+          if (!Object.prototype.hasOwnProperty.call(cliente, 'diaVencimento')) cliente.diaVencimento = null;
+          if (!Array.isArray(cliente.pagamentos)) cliente.pagamentos = [];
+        }
+      });
+    }
   }
 
   async read() {

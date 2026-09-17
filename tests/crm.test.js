@@ -6,6 +6,7 @@ const path = require('node:path');
 const request = require('supertest');
 const { JsonDatabase } = require('../src/services/database');
 const { criarApp } = require('../src/app');
+const { crc16 } = require('../src/services/pixService');
 
 const CABECALHO = 'Empresa,Segmento,Cidade,WhatsApp,Link WhatsApp,Endereço,Presença digital encontrada,Prioridade,Oportunidade para landing page,Fonte pública,Verificado em';
 const LINHA = 'Arte da Pizza,Pizzaria,Joinville/SC,+55 47 99622-4749,https://wa.me/5547996224749,"Rua A, 10",Diretório,Alta,Criar landing page,https://example.com,2026-09-16';
@@ -44,7 +45,7 @@ async function criarCliente(extra = {}) {
     db.clientes[WHATSAPP] = {
       whatsapp: WHATSAPP, empresa: 'Arte da Pizza', segmento: 'Pizzaria', cidade: 'Joinville/SC',
       linkWhatsApp: '', endereco: '', presencaDigital: '', prioridade: 'Alta', oportunidadeLandingPage: '', fontePublica: '', verificadoEm: '',
-      status: 'Pendente', ultimoContato: '', observacoes: '', interacoes: [], criadoEm: agora, atualizadoEm: agora, ...extra
+      status: 'Pendente', ultimoContato: '', observacoes: '', interacoes: [], diaVencimento: null, pagamentos: [], criadoEm: agora, atualizadoEm: agora, ...extra
     };
   });
 }
@@ -247,7 +248,7 @@ test('24. mantém interações após recriar a camada de banco (reinício)', asy
 test('25. serializa duas gravações simultâneas sem perda de dados', async () => {
   await criarCliente();
   const [status, observacoes] = await Promise.all([
-    request(app).patch(`/api/clientes/${WHATSAPP}`).send({ status: 'Fechado' }),
+    request(app).patch(`/api/clientes/${WHATSAPP}`).send({ status: 'Fechado', diaVencimento: 10 }),
     request(app).patch(`/api/clientes/${WHATSAPP}`).send({ observacoes: 'Gravação concorrente' })
   ]);
   assert.equal(status.status, 200);
@@ -255,4 +256,115 @@ test('25. serializa duas gravações simultâneas sem perda de dados', async () 
   const cliente = (await database.read()).clientes[WHATSAPP];
   assert.equal(cliente.status, 'Fechado');
   assert.equal(cliente.observacoes, 'Gravação concorrente');
+});
+
+test('26. exige dia de vencimento quando o contato vira cliente', async () => {
+  await criarCliente();
+  const invalido = await request(app).patch(`/api/clientes/${WHATSAPP}`).send({ status: 'Fechado' });
+  assert.equal(invalido.status, 400);
+  const valido = await request(app).patch(`/api/clientes/${WHATSAPP}`).send({ status: 'Fechado', diaVencimento: 15 });
+  assert.equal(valido.status, 200);
+  assert.equal(valido.body.diaVencimento, 15);
+});
+
+test('27. filtra vencimentos dos próximos sete dias', async () => {
+  const hoje = new Date();
+  await criarCliente({ status: 'Fechado', diaVencimento: hoje.getDate() });
+  const res = await request(app).get('/api/clientes?proximosVencimentos=1');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.clientes.length, 1);
+  assert.equal(res.body.clientes[0].diasAteVencimento, 0);
+  const resumo = await request(app).get('/api/resumo');
+  assert.equal(resumo.body.proximosVencimentos, 1);
+});
+
+test('28. cria pagamento com valor padrão de R$ 50,00', async () => {
+  await criarCliente({ status: 'Fechado', diaVencimento: 15 });
+  const res = await request(app).post(`/api/clientes/${WHATSAPP}/pagamentos`).send({ dataVencimento: '2026-10-15', status: 'Pendente' });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.valor, 50);
+  assert.match(res.body.id, /^[0-9a-f-]{36}$/);
+});
+
+test('29. edita e lista um pagamento como pago', async () => {
+  await criarCliente({ status: 'Fechado', diaVencimento: 15 });
+  const criado = await request(app).post(`/api/clientes/${WHATSAPP}/pagamentos`).send({ dataVencimento: '2026-10-15' });
+  const editado = await request(app).patch(`/api/clientes/${WHATSAPP}/pagamentos/${criado.body.id}`).send({ status: 'Pago', dataPagamento: '2026-10-14', valor: 50 });
+  assert.equal(editado.status, 200);
+  assert.equal(editado.body.status, 'Pago');
+  const lista = await request(app).get(`/api/clientes/${WHATSAPP}/pagamentos`);
+  assert.equal(lista.body[0].dataPagamento, '2026-10-14');
+});
+
+test('30. exclui somente o pagamento selecionado', async () => {
+  await criarCliente({ status: 'Fechado', diaVencimento: 15 });
+  const um = await request(app).post(`/api/clientes/${WHATSAPP}/pagamentos`).send({ dataVencimento: '2026-10-15' });
+  const dois = await request(app).post(`/api/clientes/${WHATSAPP}/pagamentos`).send({ dataVencimento: '2026-11-15' });
+  const exclusao = await request(app).delete(`/api/clientes/${WHATSAPP}/pagamentos/${um.body.id}`);
+  assert.equal(exclusao.status, 204);
+  const pagamentos = (await database.read()).clientes[WHATSAPP].pagamentos;
+  assert.equal(pagamentos.length, 1);
+  assert.equal(pagamentos[0].id, dois.body.id);
+});
+
+test('31. soma pagos do mês e remove a competência quitada dos próximos vencimentos', async () => {
+  const hoje = new Date();
+  const dataHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+  await criarCliente({ status: 'Fechado', diaVencimento: hoje.getDate() });
+  await request(app).post(`/api/clientes/${WHATSAPP}/pagamentos`).send({
+    dataVencimento: dataHoje,
+    dataPagamento: dataHoje,
+    status: 'Pago',
+    valor: 50
+  });
+  const resumo = await request(app).get('/api/resumo');
+  assert.equal(resumo.body.totalPagoMes, 50);
+  assert.equal(resumo.body.clientesPagosMes, 1);
+  assert.equal(resumo.body.proximosVencimentos, 0);
+  const pagos = await request(app).get('/api/clientes?pagosMes=1');
+  assert.equal(pagos.body.clientes.length, 1);
+  const proximos = await request(app).get('/api/clientes?proximosVencimentos=1');
+  assert.equal(proximos.body.clientes.length, 0);
+});
+
+test('32. gera payload e imagem QR Code Pix com valor e CNPJ configurados', async () => {
+  const res = await request(app).post('/api/pix/qrcode').send({
+    valor: 50,
+    whatsapp: WHATSAPP,
+    dataVencimento: '2026-09-22'
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.valor, 50);
+  assert.match(res.body.qrCode, /^data:image\/png;base64,/);
+  assert.ok(res.body.payload.includes('62197420000167'));
+  assert.ok(res.body.payload.includes('50.00'));
+  assert.equal(res.body.payload.slice(-4), crc16(res.body.payload.slice(0, -4)));
+});
+
+test('33. rejeita valor Pix inválido', async () => {
+  const res = await request(app).post('/api/pix/qrcode').send({ valor: 0 });
+  assert.equal(res.status, 400);
+  assert.match(res.body.erro, /valor Pix válido/);
+});
+
+test('34. filtra pagamentos vencidos e remove o alerta após a quitação', async () => {
+  const hoje = new Date();
+  const ontem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
+  const formatar = (data) => `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-${String(data.getDate()).padStart(2, '0')}`;
+  await criarCliente({ status: 'Fechado', diaVencimento: hoje.getDate() });
+  const pagamento = await request(app).post(`/api/clientes/${WHATSAPP}/pagamentos`).send({
+    dataVencimento: formatar(ontem),
+    status: 'Pendente'
+  });
+  const resumoAtrasado = await request(app).get('/api/resumo');
+  assert.equal(resumoAtrasado.body.vencimentosAtrasados, 1);
+  const atrasados = await request(app).get('/api/clientes?vencimentosAtrasados=1');
+  assert.equal(atrasados.body.clientes.length, 1);
+  assert.equal(atrasados.body.clientes[0].vencimentoAtrasado, formatar(ontem));
+  await request(app).patch(`/api/clientes/${WHATSAPP}/pagamentos/${pagamento.body.id}`).send({
+    status: 'Pago',
+    dataPagamento: formatar(hoje)
+  });
+  const resumoPago = await request(app).get('/api/resumo');
+  assert.equal(resumoPago.body.vencimentosAtrasados, 0);
 });

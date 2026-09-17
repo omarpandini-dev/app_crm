@@ -21,6 +21,8 @@ const TIPOS_INTERACAO = [
   'Outro'
 ];
 
+const STATUS_PAGAMENTO = ['Pendente', 'Pago', 'Atrasado', 'Cancelado'];
+
 const COLUNAS_CSV = [
   'Empresa',
   'Segmento',
@@ -35,4 +37,4 @@ const COLUNAS_CSV = [
   'Verificado em'
 ];
 
-module.exports = { STATUS, TIPOS_INTERACAO, COLUNAS_CSV };
+module.exports = { STATUS, TIPOS_INTERACAO, STATUS_PAGAMENTO, COLUNAS_CSV };

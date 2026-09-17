@@ -139,7 +139,7 @@ const DESCRICOES_POR_TITULO = {
 };
 
 const STATUS_DOS_CARDS = new Set(['Pendente', 'Aguardando retorno', 'Proposta enviada', 'Fechado']);
-const state = { page: 1, limit: 15, totalPaginas: 1, clienteAtual: null, timerBusca: null, summaryFilter: 'total' };
+const state = { page: 1, limit: 15, totalPaginas: 1, clienteAtual: null, pagamentoCliente: null, pixCliente: null, pixVencimento: '', timerBusca: null, summaryFilter: 'total' };
 const $ = (seletor) => document.querySelector(seletor);
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -164,6 +164,7 @@ function registrarEventos() {
     card.addEventListener('click', () => selecionarCard(card.dataset.summaryFilter));
   });
   $('#form-importacao').addEventListener('submit', importarCsv);
+  $('#abrir-gerador-pix').addEventListener('click', () => abrirModalPix({ empresa: 'Cobrança avulsa', whatsapp: '', proximoVencimento: '' }));
   $('#arquivo-csv').addEventListener('change', atualizarNomeArquivo);
   const dropZone = $('#drop-zone');
   ['dragenter', 'dragover'].forEach((evento) => dropZone.addEventListener(evento, (e) => { e.preventDefault(); dropZone.classList.add('dragging'); }));
@@ -196,9 +197,16 @@ function registrarEventos() {
   $('#pagina-anterior').addEventListener('click', () => mudarPagina(-1));
   $('#proxima-pagina').addEventListener('click', () => mudarPagina(1));
   $('#form-cliente').addEventListener('submit', salvarCliente);
+  $('#cliente-status').addEventListener('change', atualizarCampoVencimento);
   $('#nova-interacao').addEventListener('click', abrirNovaInteracao);
   $('#interacao-titulo').addEventListener('change', () => renderizarOpcoesDescricao($('#interacao-titulo').value, ''));
   $('#form-interacao').addEventListener('submit', salvarInteracao);
+  $('#novo-pagamento').addEventListener('click', () => abrirNovoPagamento());
+  $('#pagamento-status').addEventListener('change', atualizarCampoDataPagamento);
+  $('#form-pagamento').addEventListener('submit', salvarPagamento);
+  $('#form-pix').addEventListener('submit', gerarPix);
+  $('#copiar-pix').addEventListener('click', copiarCodigoPix);
+  $('#pix-valor').addEventListener('input', () => { $('#pix-resultado').hidden = true; });
   document.querySelectorAll('[data-close]').forEach((botao) => botao.addEventListener('click', () => $(`#${botao.dataset.close}`).close()));
   $('#dialog-cliente').addEventListener('close', () => { state.clienteAtual = null; });
 }
@@ -218,6 +226,10 @@ async function carregarResumo() {
   $('#resumo-aguardando').textContent = resumo.aguardandoRetorno;
   $('#resumo-propostas').textContent = resumo.propostasEnviadas;
   $('#resumo-fechados').textContent = resumo.fechados;
+  $('#resumo-vencimentos').textContent = resumo.proximosVencimentos;
+  $('#resumo-atrasados').textContent = resumo.vencimentosAtrasados;
+  $('#resumo-pagos').textContent = formatarMoeda(resumo.totalPagoMes);
+  $('#resumo-pagos').title = `${resumo.clientesPagosMes} ${resumo.clientesPagosMes === 1 ? 'cliente pago' : 'clientes pagos'} no mês`;
   $('#resumo-interacoes').textContent = resumo.interacoes;
 }
 
@@ -226,7 +238,12 @@ async function carregarClientes() {
   const filtros = { busca: $('#busca').value, status: $('#filtro-status').value, prioridade: $('#filtro-prioridade').value, segmento: $('#filtro-segmento').value };
   Object.entries(filtros).forEach(([chave, valor]) => { if (valor) params.set(chave, valor); });
   if (state.summaryFilter === 'interacoes') params.set('comInteracoes', '1');
+  if (state.summaryFilter === 'vencimentos') params.set('proximosVencimentos', '1');
+  if (state.summaryFilter === 'atrasados') params.set('vencimentosAtrasados', '1');
+  if (state.summaryFilter === 'pagos') params.set('pagosMes', '1');
   const dados = await api(`/api/clientes?${params}`);
+  $('#coluna-pix').hidden = !filtroExibePix();
+  $('#coluna-pagamento').hidden = !filtroExibePix();
   state.totalPaginas = dados.paginacao.totalPaginas;
   if (state.page > state.totalPaginas) { state.page = state.totalPaginas; return carregarClientes(); }
   renderizarClientes(dados.clientes);
@@ -267,15 +284,18 @@ function renderizarClientes(clientes) {
   $('#estado-vazio').hidden = clientes.length > 0;
   clientes.forEach((cliente) => {
     const tr = document.createElement('tr');
-    tr.append(
+    const celulas = [
       criarTdEmpresa(cliente),
       criarCelulaContato(cliente),
       criarTdComElemento('span', cliente.prioridade || '—', `priority priority-${slug(cliente.prioridade)}`),
       criarTdComElemento('span', cliente.status, `badge badge-${slug(cliente.status)}`),
       criarTdTexto(formatarData(cliente.ultimoContato)),
-      criarTdInteracoes(cliente),
-      criarTdAcoes(cliente)
-    );
+      criarTdVencimento(cliente),
+      criarTdInteracoes(cliente)
+    ];
+    if (filtroExibePix()) celulas.push(criarTdPagamento(cliente), criarTdPix(cliente));
+    celulas.push(criarTdAcoes(cliente));
+    tr.append(...celulas);
     tbody.append(tr);
   });
 }
@@ -297,6 +317,23 @@ function criarCelulaContato(cliente) {
 
 function criarTdTexto(texto) { const td = document.createElement('td'); td.textContent = texto; return td; }
 function criarTdComElemento(tag, texto, classe) { const td = document.createElement('td'); td.append(el(tag, texto, classe)); return td; }
+function filtroExibePix() { return ['vencimentos', 'atrasados'].includes(state.summaryFilter); }
+function criarTdVencimento(cliente) {
+  const td = document.createElement('td');
+  if (cliente.vencimentoAtrasado) {
+    const dias = cliente.diasEmAtraso;
+    const wrap = el('span', '', 'due-date overdue');
+    wrap.append(el('strong', formatarDataCurta(cliente.vencimentoAtrasado)), el('span', `${dias} ${dias === 1 ? 'dia' : 'dias'} em atraso`));
+    td.append(wrap); return td;
+  }
+  if (!cliente.proximoVencimento) { td.textContent = '—'; return td; }
+  const dias = cliente.diasAteVencimento;
+  const classe = dias === 0 ? 'due-date today' : dias <= 7 ? 'due-date soon' : 'due-date';
+  const wrap = el('span', '', classe);
+  const lembrete = dias === 0 ? 'Vence hoje' : dias === 1 ? 'Vence amanhã' : `Em ${dias} dias`;
+  wrap.append(el('strong', formatarDataCurta(cliente.proximoVencimento)), el('span', lembrete));
+  td.append(wrap); return td;
+}
 function criarTdInteracoes(cliente) {
   const td = document.createElement('td');
   const quantidade = cliente.interacoes?.length || 0;
@@ -308,12 +345,75 @@ function criarTdInteracoes(cliente) {
   td.append(botao);
   return td;
 }
+function criarTdPix(cliente) {
+  const td = document.createElement('td');
+  const botao = el('button', '', 'pix-button');
+  botao.type = 'button'; botao.title = 'Gerar QR Code Pix';
+  botao.setAttribute('aria-label', `Gerar Pix para ${cliente.empresa || 'cliente'}`);
+  botao.append(el('span', '💳', 'pix-payment-emoji')); botao.addEventListener('click', () => abrirModalPix(cliente));
+  td.append(botao); return td;
+}
+function criarTdPagamento(cliente) {
+  const td = document.createElement('td');
+  const botao = el('button', '＋ Registrar', 'payment-quick-button');
+  botao.type = 'button'; botao.title = 'Registrar novo pagamento';
+  botao.setAttribute('aria-label', `Registrar pagamento de ${cliente.empresa || 'cliente'}`);
+  botao.addEventListener('click', () => abrirNovoPagamento(cliente));
+  td.append(botao); return td;
+}
 function criarTdAcoes(cliente) {
   const td = document.createElement('td');
   const wrap = el('div', '', 'row-actions');
   const detalhes = el('button', 'Ver detalhes', 'details-button'); detalhes.type = 'button'; detalhes.addEventListener('click', () => abrirCliente(cliente.whatsapp));
   const whats = el('a', 'W', 'whatsapp-button'); whats.href = cliente.linkWhatsApp || `https://wa.me/${cliente.whatsapp}`; whats.target = '_blank'; whats.rel = 'noopener noreferrer'; whats.title = 'Abrir WhatsApp';
   wrap.append(detalhes, whats); td.append(wrap); return td;
+}
+
+function abrirModalPix(cliente) {
+  state.pixCliente = cliente;
+  state.pixVencimento = cliente.vencimentoAtrasado || cliente.proximoVencimento || '';
+  $('#form-pix').reset();
+  const identificacao = [cliente.empresa || 'Cliente', cliente.whatsapp ? formatarWhatsApp(cliente.whatsapp) : ''].filter(Boolean);
+  $('#pix-cliente').textContent = identificacao.join(' · ');
+  $('#pix-valor').value = '50.00';
+  $('#pix-vencimento').value = state.pixVencimento;
+  $('#pix-vencimento-wrap').hidden = !state.pixVencimento;
+  $('#pix-valor-wrap').classList.toggle('full', !state.pixVencimento);
+  $('#pix-resultado').hidden = true;
+  $('#pix-qrcode').removeAttribute('src');
+  $('#pix-copia-cola').value = '';
+  $('#dialog-pix').showModal();
+}
+
+async function gerarPix(evento) {
+  evento.preventDefault();
+  if (!state.pixCliente) return;
+  const body = {
+    valor: Number($('#pix-valor').value),
+    whatsapp: state.pixCliente.whatsapp,
+    dataVencimento: state.pixVencimento
+  };
+  await comBotaoCarregando(evento.submitter, async () => {
+    const resultado = await api('/api/pix/qrcode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    $('#pix-qrcode').src = resultado.qrCode;
+    $('#pix-copia-cola').value = resultado.payload;
+    $('#pix-resultado-valor').textContent = formatarMoeda(resultado.valor);
+    $('#pix-txid').textContent = `Identificador: ${resultado.txid}`;
+    $('#pix-resultado').hidden = false;
+  });
+}
+
+async function copiarCodigoPix() {
+  const campo = $('#pix-copia-cola');
+  if (!campo.value) return;
+  try {
+    await navigator.clipboard.writeText(campo.value);
+  } catch {
+    campo.select();
+    document.execCommand('copy');
+    campo.setSelectionRange(0, 0);
+  }
+  toast('Código Pix copiado.', 'success');
 }
 
 async function abrirInteracoesRapidas(cliente) {
@@ -377,11 +477,22 @@ function renderizarDetalhes(cliente) {
     grid.append(item);
   });
   $('#cliente-status').value = cliente.status;
+  $('#cliente-dia-vencimento').value = cliente.diaVencimento || '';
+  atualizarCampoVencimento();
   $('#cliente-ultimo-contato').value = paraInputData(cliente.ultimoContato);
   $('#cliente-ultimo-contato').disabled = (cliente.interacoes?.length || 0) > 0;
   $('#cliente-ultimo-contato').title = $('#cliente-ultimo-contato').disabled ? 'Calculado automaticamente pelas interações' : '';
   $('#cliente-observacoes').value = cliente.observacoes || '';
+  $('#novo-pagamento').disabled = cliente.status !== 'Fechado';
+  $('#novo-pagamento').title = cliente.status === 'Fechado' ? '' : 'Altere o status para Fechado antes de registrar pagamentos';
   renderizarTimeline(cliente.interacoes || []);
+  renderizarPagamentos(cliente.pagamentos || []);
+}
+
+function atualizarCampoVencimento() {
+  const fechado = $('#cliente-status').value === 'Fechado';
+  $('#cliente-vencimento-wrap').hidden = !fechado;
+  $('#cliente-dia-vencimento').required = fechado;
 }
 
 function renderizarTimeline(interacoes) {
@@ -405,6 +516,7 @@ async function salvarCliente(evento) {
   evento.preventDefault();
   if (!state.clienteAtual) return;
   const body = { status: $('#cliente-status').value, observacoes: $('#cliente-observacoes').value };
+  if (body.status === 'Fechado') body.diaVencimento = Number($('#cliente-dia-vencimento').value);
   if (!$('#cliente-ultimo-contato').disabled) body.ultimoContato = $('#cliente-ultimo-contato').value ? new Date($('#cliente-ultimo-contato').value).toISOString() : '';
   await comBotaoCarregando(evento.submitter, async () => {
     state.clienteAtual = await api(`/api/clientes/${state.clienteAtual.whatsapp}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -500,6 +612,93 @@ async function excluirInteracao(item) {
   } catch (erro) { mostrarErro(erro); }
 }
 
+function renderizarPagamentos(pagamentos) {
+  const lista = $('#pagamentos-lista');
+  lista.replaceChildren();
+  const ordenados = [...pagamentos].sort((a, b) => b.dataVencimento.localeCompare(a.dataVencimento));
+  if (!ordenados.length) {
+    lista.append(el('div', 'Nenhum pagamento registrado para este cliente.', 'payments-empty'));
+    return;
+  }
+  ordenados.forEach((pagamento) => {
+    const item = el('article', '', 'payment-item');
+    const vencimento = document.createElement('div');
+    vencimento.append(el('strong', formatarDataCurta(pagamento.dataVencimento)), el('small', 'Vencimento'));
+    const valor = document.createElement('div');
+    valor.append(el('strong', formatarMoeda(pagamento.valor)), el('small', pagamento.dataPagamento ? `Pago em ${formatarDataCurta(pagamento.dataPagamento)}` : 'Pagamento não informado'));
+    const status = el('span', pagamento.status, `payment-status ${slug(pagamento.status)}`);
+    const acoes = el('div', '', 'payment-actions');
+    const editar = el('button', 'Editar', 'text-button'); editar.type = 'button'; editar.addEventListener('click', () => abrirEditarPagamento(pagamento));
+    const excluir = el('button', 'Excluir', 'text-button danger'); excluir.type = 'button'; excluir.addEventListener('click', () => excluirPagamento(pagamento));
+    acoes.append(editar, excluir); item.append(vencimento, valor, status, acoes); lista.append(item);
+  });
+}
+
+function abrirNovoPagamento(cliente = state.clienteAtual) {
+  if (!cliente || cliente.status !== 'Fechado') return toast('Defina o cliente como Fechado antes de registrar pagamentos.', 'error');
+  state.pagamentoCliente = cliente;
+  $('#form-pagamento').reset();
+  $('#pagamento-id').value = '';
+  $('#titulo-form-pagamento').textContent = 'Novo pagamento';
+  $('#pagamento-valor').value = '50.00';
+  $('#pagamento-status').value = 'Pendente';
+  $('#pagamento-vencimento').value = cliente.vencimentoAtrasado || cliente.proximoVencimento || hojeIsoLocal();
+  atualizarCampoDataPagamento();
+  $('#dialog-pagamento').showModal();
+}
+
+function abrirEditarPagamento(pagamento) {
+  state.pagamentoCliente = state.clienteAtual;
+  $('#pagamento-id').value = pagamento.id;
+  $('#titulo-form-pagamento').textContent = 'Editar pagamento';
+  $('#pagamento-vencimento').value = pagamento.dataVencimento;
+  $('#pagamento-valor').value = Number(pagamento.valor).toFixed(2);
+  $('#pagamento-status').value = pagamento.status;
+  $('#pagamento-data').value = pagamento.dataPagamento || '';
+  $('#pagamento-observacoes').value = pagamento.observacoes || '';
+  atualizarCampoDataPagamento(false);
+  $('#dialog-pagamento').showModal();
+}
+
+function atualizarCampoDataPagamento(limpar = true) {
+  const pago = $('#pagamento-status').value === 'Pago';
+  const campo = $('#pagamento-data');
+  campo.disabled = !pago;
+  campo.required = pago;
+  if (!pago && limpar) campo.value = '';
+  if (pago && !campo.value) campo.value = hojeIsoLocal();
+}
+
+async function salvarPagamento(evento) {
+  evento.preventDefault();
+  const id = $('#pagamento-id').value;
+  const body = {
+    dataVencimento: $('#pagamento-vencimento').value,
+    valor: Number($('#pagamento-valor').value),
+    status: $('#pagamento-status').value,
+    dataPagamento: $('#pagamento-data').disabled ? '' : $('#pagamento-data').value,
+    observacoes: $('#pagamento-observacoes').value
+  };
+  if (!state.pagamentoCliente) return;
+  const url = `/api/clientes/${state.pagamentoCliente.whatsapp}/pagamentos${id ? `/${id}` : ''}`;
+  await comBotaoCarregando(evento.submitter, async () => {
+    await api(url, { method: id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    $('#dialog-pagamento').close();
+    toast(id ? 'Pagamento atualizado.' : 'Pagamento registrado.', 'success');
+    if (state.clienteAtual?.whatsapp === state.pagamentoCliente.whatsapp && $('#dialog-cliente').open) await atualizarClienteAtual();
+    else await Promise.all([carregarClientes(), carregarResumo()]);
+  });
+}
+
+async function excluirPagamento(pagamento) {
+  if (!confirm(`Excluir o pagamento de ${formatarMoeda(pagamento.valor)} com vencimento em ${formatarDataCurta(pagamento.dataVencimento)}?`)) return;
+  try {
+    await api(`/api/clientes/${state.clienteAtual.whatsapp}/pagamentos/${pagamento.id}`, { method: 'DELETE' });
+    toast('Pagamento excluído.', 'success');
+    await atualizarClienteAtual();
+  } catch (erro) { mostrarErro(erro); }
+}
+
 async function atualizarClienteAtual() {
   const whatsapp = state.clienteAtual.whatsapp;
   state.clienteAtual = await api(`/api/clientes/${whatsapp}`);
@@ -539,6 +738,9 @@ function slug(valor = '') { return valor.normalize('NFD').replace(/[\u0300-\u036
 function iniciais(nome = '') { return nome.split(/\s+/).filter(Boolean).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase() || '?'; }
 function formatarWhatsApp(numero = '') { return numero.length === 13 && numero.startsWith('55') ? `+${numero.slice(0,2)} (${numero.slice(2,4)}) ${numero.slice(4,9)}-${numero.slice(9)}` : numero; }
 function formatarData(valor, hora = false) { if (!valor) return '—'; const data = new Date(valor); if (Number.isNaN(data.getTime())) return valor; return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', ...(hora ? { timeStyle: 'short' } : {}) }).format(data); }
+function formatarDataCurta(valor) { if (!valor) return '—'; const [ano, mes, dia] = valor.split('-').map(Number); return new Intl.DateTimeFormat('pt-BR').format(new Date(ano, mes - 1, dia)); }
+function formatarMoeda(valor) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0); }
+function hojeIsoLocal() { const agora = new Date(); const local = new Date(agora.getTime() - agora.getTimezoneOffset() * 60000); return local.toISOString().slice(0, 10); }
 function paraInputData(valor) { if (!valor) return ''; const data = new Date(valor); const local = new Date(data.getTime() - data.getTimezoneOffset() * 60000); return local.toISOString().slice(0, 16); }
 function mostrarErro(erro) { console.error(erro); toast(erro.message || 'Não foi possível concluir a operação.', 'error', 6000); }
 function toast(mensagem, tipo = '', duracao = 4000) { const item = el('div', mensagem, `toast ${tipo}`); $('#toast-container').append(item); setTimeout(() => item.remove(), duracao); }
